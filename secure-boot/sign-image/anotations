@@ -1,0 +1,117 @@
+
+Documentação usada:
+https://documentation.ubuntu.com/core/reference/assertions/
+
+
+1. Estrututa criada:
+
+rpi-secureboot/
+├── keys/
+│   ├── private.pem
+│   └── public.pem
+├── images/
+│   ├── base.img
+│   ├── signed.img
+├── scripts/
+│   ├── sign-image.sh
+│   └── verify-image.sh
+├── Dockerfile
+└── pipeline.yml
+
+2. Chaves criadas:
+openssl genpkey -algorithm RSA -out keys/private.pem -pkeyopt rsa_keygen_bits:4096
+openssl rsa -pubout -in keys/private.pem -out keys/public.pem
+
+3. Download Imagem Ubunto Core 24:
+wget https://cdimage.ubuntu.com/ubuntu-core/24/stable/current/ubuntu-core-24-arm64+raspi.img.xz
+unxz ubuntu-core-24-arm64+raspi.img.xz 
+
+4. Gera chave SSH pub para colocar na conta do Ubuntu:
+ssh-keygen
+
+5. Instala a ferramenta snapd e faz login:
+sudo dnf install snapd
+snap login
+
+7.Cria uma key para o system-user:
+snap create-key system-user
+
+6. Gera arquivo system-user.json:
+{
+  "type": "system-user",
+  "authority-id": "canonical",
+  "brand-id": "canonical",
+  "email": "beatrizcristinafaria47@gmail.com",
+  "series": ["16"],
+  "models": ["raspberrypi"],
+  "name": "ubuntu",
+  "username": "ubuntu",
+  "ssh-keys": [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBfvpB0s7YurqaQGA9KKWQwJY3XtrS7ogiImApUEzlqE"
+  ],
+  "since": "2025-12-29T00:00:00+00:00",
+  "until": "2035-12-31T23:59:59+00:00"
+}
+
+7. Assina esse system-user.json:
+snap sign system-user.assertion -k system-user   > system-user.assertion.signed
+
+
+8. Vai gerar algo como:
+type: system-user
+authority-id: canonical
+brand-id: canonical
+email: beatrizcristinafaria47@gmail.com
+models:
+  - raspberrypi
+name: ubuntu
+series:
+  - 16
+since: 2025-12-29T00:00:00+00:00
+ssh-keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBfvpB0s7YurqaQGA9KKWQwJY3XtrS7ogiImApUEzlqE
+until: 2035-12-31T23:59:59+00:00
+username: ubuntu
+sign-key-sha3-384: NfiJYWBiz17GqRcnSnz80os0CcYgMPr2vRb0SDRG1zdu_8nzyDKPq699Wqo97Dck
+
+AcLBcwQAAQoAHRYhBC0lYywd6Rgk8IssROIkGtC4F51GBQJpUr0NAAoJEOIkGtC4F51Gi30P/Rhz
+nXkkf/PDYexsNOhKmi23htrZMxmaKXhD1DEicscf6vS8SNdE/nnecXSD0oUQ9bGzsgO8pihwR6UB
+8zG2KOdMG8QbNbUnQtMv3Vwe5KvR9T/P3bFSrpEmZ65TJa10z4jBiJJ6bNmjkg/pDA2gEdx2PXeW
+382KTjReMDxn4XomWm85U9foL5X8Yj6LDuhPOwGNZRL3yjfxk4y/7mH5tzHHujd4AN82wj01a5WR
+4gquViGIIMFrmfWgzGOkGyQK0EbEarBwqyyin/L/9/dYeY+bENnhFWmO7GUIy91iLxvKot8xfl2I
+4JRYHb7MQ+3+nDumin0jMp4iY4olNE5BuITS+KOulGO4B1mMja/F5d0sTA2LPdr3PZIarNWL1v/m
+u5/AMem0HvxpuBKcrxDr8QMCB4rz+4usYH6oYt0X8pWeDqzneWtgU6L1hOB+39uIvKKGrwDYXwai
+8X4m1FD4wXr+jPcvYmYjOaoSiyXAKHLX6Y+bDbGQs0OG566UJIsZoqqig70i0zOOacgzHITGiAwm
+wXCw06vh0H8LRUY8l4hjPoy+lRA2OKTlBXRj/RRogZCdw+10g6ycWVRduVLeJ+ocj4DjXxKUAnnb
+4+RPTmlUPq0gr91CSZ96J+hnWMizaJNFyG3Rk96feWaksSR7rEAsTfDKe/uhJGJGUQ+hZM5n
+
+9. Assina a imagem:
+sudo losetup -Pf ubuntu-core-24-arm64.img
+sudo mount /dev/loop0p1 /mnt
+sudo mkdir -p /mnt/system-data/var/lib/snapd/seed/assertions
+sudo cp system-user.assertion.signed \
+  /mnt/system-data/var/lib/snapd/seed/assertions/
+sudo sync
+sudo umount /mnt
+sudo losetup -d /dev/loop0
+
+10. Testei com o QEMU:
+    - Baixar: sudo dnf install qemu -y
+    - Baixar UEFI: sudo dnf install edk2-aarch64 -y
+    - Para o QEMU tem que baixar a imagem do ubuntu core sem o +raspi
+
+    qemu-system-aarch64 \
+  -machine virt \
+  -cpu cortex-a57 \
+  -m 2048 \
+  -bios /usr/share/edk2/aarch64/QEMU_EFI.fd \
+  -drive if=none,file=ubuntu-core-22-arm64.img,format=raw,id=hd0 \
+  -device virtio-blk-device,drive=hd0 \
+  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -device virtio-net-device,netdev=net0 \
+  -nographic
+
+
+******PROBLEMA ATUAL*********
+Está pedindo senha:
+    - tentar gerar com senha o assertion e gravar novamente a imagem e rodar de novo.
